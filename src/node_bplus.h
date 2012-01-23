@@ -50,11 +50,13 @@ class BPlus : ObjectWrap {
 
   static void Initialize(Handle<Object> target);
 
-  BPlus() : ObjectWrap(), opened_(false) { }
+  BPlus() : ObjectWrap(), opened_(false) {
+    uv_mutex_init(&write_mutex_);
+  }
+
   ~BPlus() {
-    if (opened_) {
-      bp_close(&db_);
-    }
+    if (opened_) bp_close(&db_);
+    uv_mutex_destroy(&write_mutex_);
   }
 
  protected:
@@ -72,6 +74,8 @@ class BPlus : ObjectWrap {
 
   bool opened_;
   bp_tree_t db_;
+
+  uv_mutex_t write_mutex_;
 };
 
 } // namespace plus

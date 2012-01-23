@@ -96,8 +96,11 @@ Handle<Value> BPlus::Close(const Arguments &args) {
 
 void BPlus::DoSet(uv_work_t* work) {
   bp_base_req* req = container_of(work, bp_base_req, w);
+  uv_mutex_lock(&req->b->write_mutex_);
 
   req->result = bp_set(&req->b->db_, &req->key, &req->value);
+
+  uv_mutex_unlock(&req->b->write_mutex_);
 }
 
 
