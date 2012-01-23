@@ -16,15 +16,6 @@
       return ThrowException(String::New("Database wasn't opened"));\
     }
 
-#define QUEUE_ACTION(b, callback)\
-    uv_work_t* work = new uv_work_t();\
-    bplus_work_data* data = new bplus_work_data();\
-    data->b = b;\
-    data->result = BP_OK;\
-    data->callback = callback;\
-    work->data = reinterpret_cast<void*>(data);\
-    b->Ref();
-
 namespace bplus {
 
 using namespace node;
