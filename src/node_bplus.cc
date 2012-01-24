@@ -23,7 +23,7 @@
       data->b = b_;\
       data->type = type_;\
       data->callback = callback;\
-      data->w.data = (void*) data;\
+      data->w.data = reinterpret_cast<void*>(data);\
       b->Ref();\
       prepare_\
       uv_queue_work(uv_default_loop(),\
@@ -35,6 +35,54 @@ namespace bplus {
 
 using namespace node;
 using namespace v8;
+
+
+void BufferToKey(Handle<Object> obj, bp_key_t* key) {
+  key->length = Buffer::Length(obj);
+  key->value = new char[key->length];
+  memcpy(key->value, Buffer::Data(obj), key->length);
+}
+
+
+void BufferToRawValue(Handle<Object> obj, bp_value_t* value) {
+  assert(Buffer::Length(obj) == sizeof(*value));
+  memcpy(reinterpret_cast<char*>(value),
+         Buffer::Data(obj),
+         Buffer::Length(obj));
+}
+
+
+Handle<Value> ValueToObject(bp_value_t* v) {
+  HandleScope scope;
+
+  Local<Object> result = Object::New();
+
+  result->Set(String::NewSymbol("value"),
+              Buffer::New(v->value, v->length)->handle_);
+  result->Set(String::NewSymbol("ref"),
+              Buffer::New(reinterpret_cast<char*>(v), sizeof(*v))->handle_);
+
+  return scope.Close(result);
+}
+
+
+Handle<Value> InvokeCallback(Handle<Object> obj,
+                             Handle<Function> cb,
+                             int c,
+                             Handle<Value> argv[]) {
+  HandleScope scope;
+  Local<Value> result;
+  TryCatch try_catch;
+
+  result = cb->Call(obj, c, argv);
+
+  if (try_catch.HasCaught()) {
+    FatalException(try_catch);
+    return Undefined();
+  }
+
+  return scope.Close(result);
+}
 
 
 void BPlus::Initialize(Handle<Object> target) {
@@ -53,6 +101,7 @@ void BPlus::Initialize(Handle<Object> target) {
   NODE_SET_PROTOTYPE_METHOD(t, "compact", BPlus::Compact);
   NODE_SET_PROTOTYPE_METHOD(t, "getPrevious", BPlus::GetPrevious);
   NODE_SET_PROTOTYPE_METHOD(t, "getRange", BPlus::GetRange);
+  NODE_SET_PROTOTYPE_METHOD(t, "getFilteredRange", BPlus::GetFilteredRange);
 
   target->Set(String::NewSymbol("BPlus"), t->GetFunction());
 }
@@ -120,10 +169,11 @@ void BPlus::DoWork(uv_work_t* work) {
     break;
    case kBulkSet:
     uv_mutex_lock(&req->b->write_mutex_);
-    req->result = bp_bulk_set(&req->b->db_,
-                              req->data.bulk.length,
-                              (const bp_key_t**) &req->data.bulk.keys,
-                              (const bp_value_t**) &req->data.bulk.values);
+    req->result = bp_bulk_set(
+        &req->b->db_,
+        req->data.bulk.length,
+        const_cast<const bp_key_t**>(&req->data.bulk.keys),
+        const_cast<const bp_value_t**>(&req->data.bulk.values));
     uv_mutex_unlock(&req->b->write_mutex_);
 
     for (uint64_t i = 0; i < req->data.bulk.length; i++) {
@@ -151,7 +201,9 @@ void BPlus::DoWork(uv_work_t* work) {
                                &req->data.range.start,
                                &req->data.range.end,
                                BPlus::GetRangeCallback,
-                               (void*) req);
+                               reinterpret_cast<void*>(req));
+    free(req->data.range.start.value);
+    free(req->data.range.end.value);
     break;
    case kRemove:
     uv_mutex_lock(&req->b->write_mutex_);
@@ -203,8 +255,14 @@ void BPlus::AfterWork(uv_work_t* work) {
 
   if (req->type == kGetRange) return;
 
-  req->callback->Call(req->b->handle_, 2, args);
+  InvokeCallback(req->b->handle_, req->callback, 2, args);
+
   req->callback.Dispose();
+  req->callback.Clear();
+  if (!req->filter.IsEmpty()) {
+    req->filter.Dispose();
+    req->filter.Clear();
+  }
   req->b->Unref();
 
   delete req;
@@ -229,7 +287,8 @@ void BPlus::GetRangeNotifier(uv_async_t* async, int code) {
   while ((msg = req->data.range.queue->Shift()) != NULL) {
     if (msg->end) {
       Handle<Value> args[2] = { Null(), String::NewSymbol("end") };
-      req->callback->Call(req->b->handle_, 2, args);
+
+      InvokeCallback(req->b->handle_, req->callback, 2, args);
       break;
     }
 
@@ -239,12 +298,14 @@ void BPlus::GetRangeNotifier(uv_async_t* async, int code) {
         ValueToObject(&msg->key),
         ValueToObject(&msg->value)
     };
-    req->callback->Call(req->b->handle_, 4, args);
+
+    InvokeCallback(req->b->handle_, req->callback, 4, args);
     delete msg;
   }
 
   if (msg != NULL && msg->end) {
-    uv_close((uv_handle_t*) &req->data.range.notifier, BPlus::GetRangeClose);
+    uv_close(reinterpret_cast<uv_handle_t*>(&req->data.range.notifier),
+             BPlus::GetRangeClose);
   }
 }
 
@@ -252,9 +313,34 @@ void BPlus::GetRangeNotifier(uv_async_t* async, int code) {
 void BPlus::GetRangeClose(uv_handle_t* handle) {
   bp_work_req* req = container_of(handle, bp_work_req, data.range.notifier);
   req->callback.Dispose();
+  req->callback.Clear();
   req->b->Unref();
   delete req->data.range.queue;
   delete req;
+}
+
+
+int BPlus::GetRangeFilter(void* arg, const bp_key_t* key) {
+  bp_work_req* req = reinterpret_cast<bp_work_req*>(arg);
+
+  Handle<Value> argv[1] = { ValueToObject(const_cast<bp_value_t*>(key)) };
+  return !InvokeCallback(req->b->handle_, req->filter, 1, argv)->IsFalse();
+}
+
+
+void BPlus::GetFilteredRangeCallback(void* arg,
+                                     const bp_key_t* key,
+                                     const bp_value_t* value) {
+  bp_work_req* req = reinterpret_cast<bp_work_req*>(arg);
+
+  Handle<Value> argv[4] = {
+      Null(),
+      String::NewSymbol("message"),
+      ValueToObject(const_cast<bp_key_t*>(key)),
+      ValueToObject(const_cast<bp_value_t*>(value))
+  };
+
+  InvokeCallback(req->b->handle_, req->callback, 4, argv);
 }
 
 
@@ -365,6 +451,60 @@ Handle<Value> BPlus::GetRange(const Arguments &args) {
 
     data->data.range.queue = new BPQueue<BPGetRangeMessage>();
   })
+
+  return Undefined();
+}
+
+
+Handle<Value> BPlus::GetFilteredRange(const Arguments &args) {
+  HandleScope scope;
+
+  UNWRAP
+  CHECK_OPENED(b)
+
+  if (!Buffer::HasInstance(args[0].As<Object>()) ||
+      !Buffer::HasInstance(args[1].As<Object>())) {
+    return ThrowException(String::New("First two arguments should be Buffers"));
+  }
+
+  /* initialize req manually */
+  bp_work_req* req = new bp_work_req;
+  req->b = b;
+  req->type = kGetFilteredRange;
+  req->filter = Persistent<Function>::New(args[2].As<Function>());
+  req->callback = Persistent<Function>::New(args[3].As<Function>());
+
+  BufferToKey(args[0].As<Object>(), &req->data.filtered_range.start);
+  BufferToKey(args[1].As<Object>(), &req->data.filtered_range.end);
+
+  int ret;
+
+  uv_mutex_lock(&b->write_mutex_);
+  ret = bp_get_filtered_range(&b->db_,
+                              &req->data.filtered_range.start,
+                              &req->data.filtered_range.end,
+                              BPlus::GetRangeFilter,
+                              BPlus::GetFilteredRangeCallback,
+                              reinterpret_cast<void*>(req));
+  uv_mutex_unlock(&b->write_mutex_);
+
+  Handle<Value> argv[2];
+  if (ret != BP_OK) {
+    argv[0] = True();
+    argv[1] = Number::New(ret);
+  } else {
+    argv[0] = Null();
+    argv[1] = String::NewSymbol("end");
+  }
+
+  InvokeCallback(b->handle_, req->callback, 2, argv);
+
+  req->callback.Dispose();
+  req->callback.Clear();
+
+  delete req->data.filtered_range.start.value;
+  delete req->data.filtered_range.end.value;
+  delete req;
 
   return Undefined();
 }

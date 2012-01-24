@@ -27,29 +27,6 @@ using namespace v8;
 #endif
 
 
-void BufferToKey(Handle<Object> obj, bp_key_t* key) {
-  key->length = Buffer::Length(obj);
-  key->value = new char[key->length];
-  memcpy(key->value, Buffer::Data(obj), key->length);
-}
-
-void BufferToRawValue(Handle<Object> obj, bp_value_t* value) {
-  assert(Buffer::Length(obj) == sizeof(*value));
-  memcpy((char*) value, Buffer::Data(obj), Buffer::Length(obj));
-}
-
-Handle<Object> ValueToObject(bp_value_t* v) {
-  Handle<Object> result = Object::New();
-
-  result->Set(String::NewSymbol("value"),
-              Buffer::New(v->value, v->length)->handle_);
-  result->Set(String::NewSymbol("ref"),
-              Buffer::New((char*) v, sizeof(*v))->handle_);
-
-  return result;
-}
-
-
 template <class T>
 class BPQueue {
  public:
@@ -158,6 +135,7 @@ class BPlus : ObjectWrap {
     kBulkSet,
     kGet,
     kGetRange,
+    kGetFilteredRange,
     kGetPrevious,
     kRemove,
     kCompact
@@ -201,12 +179,18 @@ class BPlus : ObjectWrap {
       } range;
 
       struct {
+        bp_key_t start;
+        bp_key_t end;
+      } filtered_range;
+
+      struct {
         bp_key_t key;
       } remove;
     } data;
 
     int result;
 
+    Persistent<Function> filter;
     Persistent<Function> callback;
   };
 
@@ -235,11 +219,17 @@ class BPlus : ObjectWrap {
   static void GetRangeNotifier(uv_async_t* async, int code);
   static void GetRangeClose(uv_handle_t* handle);
 
+  static int GetRangeFilter(void* arg, const bp_key_t* key);
+  static void GetFilteredRangeCallback(void* arg,
+                                       const bp_key_t* key,
+                                       const bp_value_t* value);
+
   static Handle<Value> Set(const Arguments &args);
   static Handle<Value> BulkSet(const Arguments &args);
   static Handle<Value> Get(const Arguments &args);
   static Handle<Value> GetPrevious(const Arguments &args);
   static Handle<Value> GetRange(const Arguments &args);
+  static Handle<Value> GetFilteredRange(const Arguments &args);
   static Handle<Value> Remove(const Arguments &args);
   static Handle<Value> Compact(const Arguments &args);
 
