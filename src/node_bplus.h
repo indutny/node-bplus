@@ -50,6 +50,107 @@ Handle<Object> ValueToObject(bp_value_t* v) {
 }
 
 
+template <class T>
+class BPQueue {
+ public:
+  class BPQueueMember {
+   public:
+    T* data;
+    BPQueueMember* next;
+
+    BPQueueMember(T* d) : data(d), next(NULL) {
+    }
+
+    ~BPQueueMember() {}
+
+    BPQueueMember* Next(T* d) {
+      BPQueueMember* n = new BPQueueMember(d);
+      next = n;
+
+      return n;
+    }
+  };
+
+  BPQueue() : head(NULL), current(NULL) {
+    uv_mutex_init(&mutex);
+  }
+
+  ~BPQueue() {
+    /* empty queue to free data */
+    T* data;
+    while ((data = Shift()) != NULL) delete data;
+    uv_mutex_destroy(&mutex);
+  }
+
+  void Push(T* data) {
+    uv_mutex_lock(&mutex);
+    if (head == NULL) {
+      head = new BPQueueMember(data);
+      current = head;
+    } else {
+      current = current->Next(data);
+    }
+    uv_mutex_unlock(&mutex);
+  }
+
+  T* Shift() {
+    uv_mutex_lock(&mutex);
+
+    /* if queue is empty - return NULL */
+    if (head == NULL) {
+      uv_mutex_unlock(&mutex);
+      return NULL;
+    }
+
+    /* otherwise move head forward */
+    BPQueueMember* first = head;
+    T* result = first->data;
+
+    if (first == current) {
+      current = NULL;
+    }
+
+    head = first->next;
+    delete first;
+
+    uv_mutex_unlock(&mutex);
+
+    return result;
+  }
+
+ private:
+  BPQueueMember* head;
+  BPQueueMember* current;
+  uv_mutex_t mutex;
+};
+
+
+class BPGetRangeMessage {
+ public:
+  bp_key_t key;
+  bp_value_t value;
+  bool end;
+
+  BPGetRangeMessage() : end(true) {
+  }
+
+  BPGetRangeMessage(const bp_key_t* k, const bp_value_t* v) : end(false) {
+    key.value = new char[k->length];
+    key.length = k->length;
+    value.value = new char[v->length];
+    value.length = v->length;
+
+    memcpy(key.value, k->value, k->length);
+    memcpy(value.value, v->value, v->length);
+  }
+
+  ~BPGetRangeMessage() {
+    delete key.value;
+    delete value.value;
+  }
+};
+
+
 class BPlus : ObjectWrap {
  public:
   enum bp_work_type {
@@ -57,7 +158,8 @@ class BPlus : ObjectWrap {
     kGet,
     kRemove,
     kCompact,
-    kGetPrevious
+    kGetPrevious,
+    kGetRange
   };
 
   struct bp_work_req {
@@ -85,6 +187,15 @@ class BPlus : ObjectWrap {
         bp_value_t value;
         bp_value_t previous;
       } previous;
+
+      struct {
+        bp_key_t start;
+        bp_key_t end;
+
+        BPQueue<BPGetRangeMessage>* queue;
+
+        uv_async_t notifier;
+      } range;
     } data;
 
     int result;
@@ -111,11 +222,18 @@ class BPlus : ObjectWrap {
   static void DoWork(uv_work_t* work);
   static void AfterWork(uv_work_t* work);
 
+  static void GetRangeCallback(void* arg,
+                               const bp_key_t* key,
+                               const bp_value_t* value);
+  static void GetRangeNotifier(uv_async_t* async, int code);
+  static void GetRangeClose(uv_handle_t* handle);
+
   static Handle<Value> Set(const Arguments &args);
   static Handle<Value> Get(const Arguments &args);
   static Handle<Value> Remove(const Arguments &args);
   static Handle<Value> Compact(const Arguments &args);
   static Handle<Value> GetPrevious(const Arguments &args);
+  static Handle<Value> GetRange(const Arguments &args);
 
   bool opened_;
   bp_tree_t db_;

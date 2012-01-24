@@ -92,4 +92,25 @@ suite('BPlus addon', function() {
       });
     });
   });
+
+  test('should return correct key/values on .getRange()', function(done) {
+    db.set('k1', 'v1', function(err) {
+      assert.ok(!err);
+      db.set('k2', 'v2', function(err) {
+        assert.ok(!err);
+        db.set('k3', 'v3', function(err) {
+          assert.ok(!err);
+          var matched = 0;
+          db.getRange('k2', 'k3').on('message', function(key, value) {
+            assert.ok(key.toString() === 'k2' || key.toString() === 'k3');
+            assert.ok(value.toString() === 'v2' || value.toString() === 'v3');
+            matched++;
+          }).on('end', function() {
+            assert.equal(matched, 2);
+            done();
+          });
+        });
+      });
+    });
+  });
 });

@@ -51,6 +51,7 @@ void BPlus::Initialize(Handle<Object> target) {
   NODE_SET_PROTOTYPE_METHOD(t, "remove", BPlus::Remove);
   NODE_SET_PROTOTYPE_METHOD(t, "compact", BPlus::Compact);
   NODE_SET_PROTOTYPE_METHOD(t, "getPrevious", BPlus::GetPrevious);
+  NODE_SET_PROTOTYPE_METHOD(t, "getRange", BPlus::GetRange);
 
   target->Set(String::NewSymbol("BPlus"), t->GetFunction());
 }
@@ -140,6 +141,13 @@ void BPlus::DoWork(uv_work_t* work) {
                                   &req->data.previous.value,
                                   &req->data.previous.previous);
     break;
+   case kGetRange:
+    req->result = bp_get_range(&req->b->db_,
+                               &req->data.range.start,
+                               &req->data.range.end,
+                               BPlus::GetRangeCallback,
+                               (void*) req);
+    break;
    default:
     break;
   }
@@ -166,17 +174,70 @@ void BPlus::AfterWork(uv_work_t* work) {
      case kGetPrevious:
       args[1] = ValueToObject(&req->data.previous.previous);
       break;
+     case kGetRange:
+      req->data.range.queue->Push(new BPGetRangeMessage());
+      uv_async_send(&req->data.range.notifier);
+      break;
      default:
       args[1] = Undefined();
       break;
     }
   }
 
+  if (req->type == kGetRange) return;
+
   req->callback->Call(req->b->handle_, 2, args);
   req->callback.Dispose();
-
   req->b->Unref();
-  free(work->data);
+
+  delete req;
+}
+
+
+void BPlus::GetRangeCallback(void* arg,
+                             const bp_key_t* key,
+                             const bp_value_t* value) {
+  bp_work_req* req = reinterpret_cast<bp_work_req*>(arg);
+
+  req->data.range.queue->Push(new BPGetRangeMessage(key, value));
+
+  uv_async_send(&req->data.range.notifier);
+}
+
+
+void BPlus::GetRangeNotifier(uv_async_t* async, int code) {
+  bp_work_req* req = container_of(async, bp_work_req, data.range.notifier);
+  BPGetRangeMessage* msg = NULL;
+
+  while ((msg = req->data.range.queue->Shift()) != NULL) {
+    if (msg->end) {
+      Handle<Value> args[2] = { Null(), String::NewSymbol("end") };
+      req->callback->Call(req->b->handle_, 2, args);
+      break;
+    }
+
+    Handle<Value> args[4] = {
+        Null(),
+        String::NewSymbol("message"),
+        ValueToObject(&msg->key),
+        ValueToObject(&msg->value)
+    };
+    req->callback->Call(req->b->handle_, 4, args);
+    delete msg;
+  }
+
+  if (msg != NULL && msg->end) {
+    uv_close((uv_handle_t*) &req->data.range.notifier, BPlus::GetRangeClose);
+  }
+}
+
+
+void BPlus::GetRangeClose(uv_handle_t* handle) {
+  bp_work_req* req = container_of(handle, bp_work_req, data.range.notifier);
+  req->callback.Dispose();
+  req->b->Unref();
+  delete req->data.range.queue;
+  delete req;
 }
 
 
@@ -254,8 +315,37 @@ Handle<Value> BPlus::GetPrevious(const Arguments &args) {
   UNWRAP
   CHECK_OPENED(b)
 
+  if (!Buffer::HasInstance(args[0]->ToObject())) {
+    return ThrowException(String::New("First argument should be a ref to val"));
+  }
+
   QUEUE_WORK(b, kGetPrevious, args[1], {
     BufferToRawValue(args[0]->ToObject(), &data->data.previous.value);
+  })
+
+  return Undefined();
+}
+
+
+Handle<Value> BPlus::GetRange(const Arguments &args) {
+  HandleScope scope;
+
+  UNWRAP
+  CHECK_OPENED(b)
+
+  if (!Buffer::HasInstance(args[0]->ToObject()) ||
+      !Buffer::HasInstance(args[1]->ToObject())) {
+    return ThrowException(String::New("First two arguments should be Buffers"));
+  }
+
+  QUEUE_WORK(b, kGetRange, args[2], {
+    BufferToKey(args[0]->ToObject(), &data->data.range.start);
+    BufferToKey(args[1]->ToObject(), &data->data.range.end);
+    uv_async_init(uv_default_loop(),
+                  &data->data.range.notifier,
+                  BPlus::GetRangeNotifier);
+
+    data->data.range.queue = new BPQueue<BPGetRangeMessage>();
   })
 
   return Undefined();
