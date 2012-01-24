@@ -16,20 +16,21 @@ def configure(conf):
 
 def pre(ctx):
   if Options.platform == "darwin":
-    ctx.exec_command('make ARCH=i386 MODE=RELEASE -C ../deps/bplus/')
+    ctx.exec_command('make -B ARCH=i386 MODE=RELEASE -C ../deps/bplus/')
   else:
-    ctx.exec_command('make MODE=RELEASE -C ../deps/bplus/')
+    ctx.exec_command('make -B MODE=RELEASE -C ../deps/bplus/')
 
 def build(bld):
   bld.add_pre_fun(pre)
   obj = bld.new_task_gen("cxx", "shlib", "node_addon")
+  obj.cxxflags = ["-g", "-D_LARGEFILE_SOURCE", "-Wall"]
+  obj.ldflags = ["../deps/bplus/bplus.a"]
   if Options.platform == "darwin":
-    obj.cxxflags = ["-g", "-D_LARGEFILE_SOURCE", "-Wall", "-arch", "i386"]
-    obj.ldflags = ["-arch", "i386"]
+    obj.cxxflags.append("-arch")
+    obj.cxxflags.append("i386")
+    obj.ldflags.append("-arch")
+    obj.ldflags.append("i386")
     obj.env['DEST_CPU'] = 'i386'
-  else:
-    obj.cxxflags = ["-g", "-D_LARGEFILE_SOURCE", "-Wall"]
-  obj.env.LINKFLAGS = ["../deps/bplus/bplus.a"]
   obj.target = TARGET
   obj.source = "src/node_bplus.cc"
   obj.includes = "src/ deps/bplus/include"
