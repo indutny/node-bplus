@@ -37,27 +37,30 @@ class BPlus : ObjectWrap {
  public:
   enum bp_work_type {
     kSet,
-    kGet
-  };
-
-  struct bp_set_data {
-    bp_key_t key;
-    bp_value_t value;
-  };
-
-  struct bp_get_data {
-    bp_key_t key;
-    bp_value_t value;
+    kGet,
+    kRemove
   };
 
   struct bp_work_req {
     BPlus* b;
     uv_work_t w;
+
     enum bp_work_type type;
 
     union {
-      struct bp_set_data set;
-      struct bp_set_data get;
+      struct {
+        bp_key_t key;
+        bp_value_t value;
+      } set;
+
+      struct {
+        bp_key_t key;
+        bp_value_t value;
+      } get;
+
+      struct {
+        bp_key_t key;
+      } remove;
     } data;
 
     int result;
@@ -86,6 +89,7 @@ class BPlus : ObjectWrap {
 
   static Handle<Value> Set(const Arguments &args);
   static Handle<Value> Get(const Arguments &args);
+  static Handle<Value> Remove(const Arguments &args);
 
   bool opened_;
   bp_tree_t db_;

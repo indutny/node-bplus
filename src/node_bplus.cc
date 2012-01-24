@@ -48,6 +48,7 @@ void BPlus::Initialize(Handle<Object> target) {
 
   NODE_SET_PROTOTYPE_METHOD(t, "set", BPlus::Set);
   NODE_SET_PROTOTYPE_METHOD(t, "get", BPlus::Get);
+  NODE_SET_PROTOTYPE_METHOD(t, "remove", BPlus::Remove);
 
   target->Set(String::NewSymbol("BPlus"), t->GetFunction());
 }
@@ -109,11 +110,22 @@ void BPlus::DoWork(uv_work_t* work) {
                          &req->data.set.key,
                          &req->data.set.value);
     uv_mutex_unlock(&req->b->write_mutex_);
+
+    free(req->data.set.key.value);
+    free(req->data.set.value.value);
     break;
    case kGet:
     req->result = bp_get(&req->b->db_,
                          &req->data.get.key,
                          &req->data.get.value);
+    free(req->data.get.key.value);
+    break;
+   case kRemove:
+    uv_mutex_lock(&req->b->write_mutex_);
+    req->result = bp_remove(&req->b->db_, &req->data.remove.key);
+    uv_mutex_unlock(&req->b->write_mutex_);
+
+    free(req->data.remove.key.value);
     break;
    default:
     break;
@@ -128,22 +140,23 @@ void BPlus::AfterWork(uv_work_t* work) {
 
   Handle<Value> args[2];
 
-  if (req->result == BP_OK) {
-    args[0] = Null();
-  } else {
+  if (req->result != BP_OK) {
     args[0] = True();
-  }
+    args[1] = Number::New(req->result);
+  } else {
+    args[0] = Null();
 
-  switch (req->type) {
-   case kGet:
-    {
-      bp_value_t* v = &req->data.get.value;
-      args[1] = Buffer::New(v->value, v->length)->handle_;
+    switch (req->type) {
+     case kGet:
+      {
+        bp_value_t* v = &req->data.get.value;
+        args[1] = Buffer::New(v->value, v->length)->handle_;
+      }
+      break;
+     default:
+      args[1] = Undefined();
+      break;
     }
-    break;
-   default:
-    args[1] = Undefined();
-    break;
   }
 
   req->callback->Call(req->b->handle_, 2, args);
@@ -186,6 +199,24 @@ Handle<Value> BPlus::Get(const Arguments &args) {
 
   QUEUE_WORK(b, kGet, args[1], {
     BufferToKey(args[0]->ToObject(), &data->data.get.key);
+  })
+
+  return Undefined();
+}
+
+
+Handle<Value> BPlus::Remove(const Arguments &args) {
+  HandleScope scope;
+
+  UNWRAP
+  CHECK_OPENED(b)
+
+  if (!Buffer::HasInstance(args[0]->ToObject())) {
+    return ThrowException(String::New("First argument should be Buffer"));
+  }
+
+  QUEUE_WORK(b, kRemove, args[1], {
+    BufferToKey(args[0]->ToObject(), &data->data.remove.key);
   })
 
   return Undefined();

@@ -15,15 +15,34 @@ suite('BPlus addon', function() {
 
   teardown(function() {
     db.close();
+    try {
+      fs.unlinkSync('/tmp/test.bp');
+    } catch (e) {
+    }
   });
 
-  test('should be to set and get key/value', function(done) {
+  test('should set and get key/value', function(done) {
     db.set('key', 'value', function(err) {
       assert.ok(!err);
       db.get('key', function(err, value) {
         assert.ok(!err);
         assert.equal(value.toString(), 'value');
         done();
+      });
+    });
+  });
+
+  test('should set, remove and not found key after', function(done) {
+    db.set('key', 'value', function(err) {
+      assert.ok(!err);
+      db.remove('key', function(err) {
+        assert.ok(!err);
+        db.get('key', function(err, value) {
+          assert.ok(err);
+          assert.ok(typeof value === 'number');
+          assert.ok(value > 0);
+          done();
+        });
       });
     });
   });
