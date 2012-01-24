@@ -38,7 +38,8 @@ class BPlus : ObjectWrap {
   enum bp_work_type {
     kSet,
     kGet,
-    kRemove
+    kRemove,
+    kCompact
   };
 
   struct bp_work_req {
@@ -90,6 +91,7 @@ class BPlus : ObjectWrap {
   static Handle<Value> Set(const Arguments &args);
   static Handle<Value> Get(const Arguments &args);
   static Handle<Value> Remove(const Arguments &args);
+  static Handle<Value> Compact(const Arguments &args);
 
   bool opened_;
   bp_tree_t db_;

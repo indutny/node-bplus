@@ -49,6 +49,7 @@ void BPlus::Initialize(Handle<Object> target) {
   NODE_SET_PROTOTYPE_METHOD(t, "set", BPlus::Set);
   NODE_SET_PROTOTYPE_METHOD(t, "get", BPlus::Get);
   NODE_SET_PROTOTYPE_METHOD(t, "remove", BPlus::Remove);
+  NODE_SET_PROTOTYPE_METHOD(t, "compact", BPlus::Compact);
 
   target->Set(String::NewSymbol("BPlus"), t->GetFunction());
 }
@@ -127,6 +128,10 @@ void BPlus::DoWork(uv_work_t* work) {
 
     free(req->data.remove.key.value);
     break;
+   case kCompact:
+    uv_mutex_lock(&req->b->write_mutex_);
+    req->result = bp_compact(&req->b->db_);
+    uv_mutex_unlock(&req->b->write_mutex_);
    default:
     break;
   }
@@ -218,6 +223,18 @@ Handle<Value> BPlus::Remove(const Arguments &args) {
   QUEUE_WORK(b, kRemove, args[1], {
     BufferToKey(args[0]->ToObject(), &data->data.remove.key);
   })
+
+  return Undefined();
+}
+
+
+Handle<Value> BPlus::Compact(const Arguments &args) {
+  HandleScope scope;
+
+  UNWRAP
+  CHECK_OPENED(b)
+
+  QUEUE_WORK(b, kCompact, args[0], {})
 
   return Undefined();
 }
