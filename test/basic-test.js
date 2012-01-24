@@ -113,4 +113,22 @@ suite('BPlus addon', function() {
       });
     });
   });
+
+  test('should insert kvs in bulk', function(done) {
+    var kvs = [
+      { key: '1', value: '1' },
+      { key: '2', value: '2' },
+      { key: '3', value: '3' },
+      { key: '4', value: '4' }
+    ];
+
+    db.bulk(kvs, function(err) {
+      assert.ok(!err);
+      db.get('2', function(err, value) {
+        assert.ok(!err);
+        assert.equal(value.toString(), '2');
+        done();
+      });
+    });
+  });
 });

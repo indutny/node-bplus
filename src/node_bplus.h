@@ -155,11 +155,12 @@ class BPlus : ObjectWrap {
  public:
   enum bp_work_type {
     kSet,
+    kBulkSet,
     kGet,
-    kRemove,
-    kCompact,
+    kGetRange,
     kGetPrevious,
-    kGetRange
+    kRemove,
+    kCompact
   };
 
   struct bp_work_req {
@@ -175,13 +176,15 @@ class BPlus : ObjectWrap {
       } set;
 
       struct {
-        bp_key_t key;
-        bp_value_t value;
-      } get;
+        bp_key_t* keys;
+        bp_value_t* values;
+        uint64_t length;
+      } bulk;
 
       struct {
         bp_key_t key;
-      } remove;
+        bp_value_t value;
+      } get;
 
       struct {
         bp_value_t value;
@@ -196,6 +199,10 @@ class BPlus : ObjectWrap {
 
         uv_async_t notifier;
       } range;
+
+      struct {
+        bp_key_t key;
+      } remove;
     } data;
 
     int result;
@@ -229,11 +236,12 @@ class BPlus : ObjectWrap {
   static void GetRangeClose(uv_handle_t* handle);
 
   static Handle<Value> Set(const Arguments &args);
+  static Handle<Value> BulkSet(const Arguments &args);
   static Handle<Value> Get(const Arguments &args);
-  static Handle<Value> Remove(const Arguments &args);
-  static Handle<Value> Compact(const Arguments &args);
   static Handle<Value> GetPrevious(const Arguments &args);
   static Handle<Value> GetRange(const Arguments &args);
+  static Handle<Value> Remove(const Arguments &args);
+  static Handle<Value> Compact(const Arguments &args);
 
   bool opened_;
   bp_tree_t db_;

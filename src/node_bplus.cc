@@ -47,6 +47,7 @@ void BPlus::Initialize(Handle<Object> target) {
   NODE_SET_PROTOTYPE_METHOD(t, "close", BPlus::Close);
 
   NODE_SET_PROTOTYPE_METHOD(t, "set", BPlus::Set);
+  NODE_SET_PROTOTYPE_METHOD(t, "bulkSet", BPlus::BulkSet);
   NODE_SET_PROTOTYPE_METHOD(t, "get", BPlus::Get);
   NODE_SET_PROTOTYPE_METHOD(t, "remove", BPlus::Remove);
   NODE_SET_PROTOTYPE_METHOD(t, "compact", BPlus::Compact);
@@ -117,24 +118,28 @@ void BPlus::DoWork(uv_work_t* work) {
     free(req->data.set.key.value);
     free(req->data.set.value.value);
     break;
+   case kBulkSet:
+    uv_mutex_lock(&req->b->write_mutex_);
+    req->result = bp_bulk_set(&req->b->db_,
+                              req->data.bulk.length,
+                              (const bp_key_t**) &req->data.bulk.keys,
+                              (const bp_value_t**) &req->data.bulk.values);
+    uv_mutex_unlock(&req->b->write_mutex_);
+
+    for (uint64_t i = 0; i < req->data.bulk.length; i++) {
+      free(req->data.bulk.keys[i].value);
+      free(req->data.bulk.values[i].value);
+    }
+
+    free(req->data.bulk.keys);
+    free(req->data.bulk.values);
+    break;
    case kGet:
     req->result = bp_get(&req->b->db_,
                          &req->data.get.key,
                          &req->data.get.value);
     free(req->data.get.key.value);
     req->data.get.key.value = NULL;
-    break;
-   case kRemove:
-    uv_mutex_lock(&req->b->write_mutex_);
-    req->result = bp_remove(&req->b->db_, &req->data.remove.key);
-    uv_mutex_unlock(&req->b->write_mutex_);
-
-    free(req->data.remove.key.value);
-    break;
-   case kCompact:
-    uv_mutex_lock(&req->b->write_mutex_);
-    req->result = bp_compact(&req->b->db_);
-    uv_mutex_unlock(&req->b->write_mutex_);
     break;
    case kGetPrevious:
     req->result = bp_get_previous(&req->b->db_,
@@ -147,6 +152,18 @@ void BPlus::DoWork(uv_work_t* work) {
                                &req->data.range.end,
                                BPlus::GetRangeCallback,
                                (void*) req);
+    break;
+   case kRemove:
+    uv_mutex_lock(&req->b->write_mutex_);
+    req->result = bp_remove(&req->b->db_, &req->data.remove.key);
+    uv_mutex_unlock(&req->b->write_mutex_);
+
+    free(req->data.remove.key.value);
+    break;
+   case kCompact:
+    uv_mutex_lock(&req->b->write_mutex_);
+    req->result = bp_compact(&req->b->db_);
+    uv_mutex_unlock(&req->b->write_mutex_);
     break;
    default:
     break;
@@ -247,15 +264,46 @@ Handle<Value> BPlus::Set(const Arguments &args) {
   UNWRAP
   CHECK_OPENED(b)
 
-  if (!Buffer::HasInstance(args[0]->ToObject()) ||
-      !Buffer::HasInstance(args[1]->ToObject())) {
+  if (!Buffer::HasInstance(args[0].As<Object>()) ||
+      !Buffer::HasInstance(args[1].As<Object>())) {
     return ThrowException(String::New("First two arguments should be Buffers"));
   }
 
   QUEUE_WORK(b, kSet, args[2], {
-    BufferToKey(args[0]->ToObject(), &data->data.set.key);
-    BufferToKey(args[1]->ToObject(), &data->data.set.value);
+    BufferToKey(args[0].As<Object>(), &data->data.set.key);
+    BufferToKey(args[1].As<Object>(), &data->data.set.value);
   })
+
+  return Undefined();
+}
+
+
+Handle<Value> BPlus::BulkSet(const Arguments &args) {
+  HandleScope scope;
+
+  UNWRAP
+  CHECK_OPENED(b)
+
+  if (!args[0]->IsArray()) {
+    return ThrowException(String::New("First argument should be an Array"));
+  }
+
+  Local<Array> bulk = args[0].As<Array>();
+  uint32_t len = bulk->Length();
+
+  QUEUE_WORK(b, kBulkSet, args[1], {
+    data->data.bulk.length = len;
+    data->data.bulk.keys = new bp_key_t[len];
+    data->data.bulk.values = new bp_key_t[len];
+
+    for (uint32_t i = 0; i < len; i++) {
+      Local<Object> item = bulk->Get(i).As<Object>();
+      BufferToKey(item->Get(String::NewSymbol("key")).As<Object>(),
+                  &data->data.bulk.keys[i]);
+      BufferToKey(item->Get(String::NewSymbol("value")).As<Object>(),
+                  &data->data.bulk.values[i]);
+    }
+  });
 
   return Undefined();
 }
@@ -267,12 +315,55 @@ Handle<Value> BPlus::Get(const Arguments &args) {
   UNWRAP
   CHECK_OPENED(b)
 
-  if (!Buffer::HasInstance(args[0]->ToObject())) {
+  if (!Buffer::HasInstance(args[0].As<Object>())) {
     return ThrowException(String::New("First argument should be Buffer"));
   }
 
   QUEUE_WORK(b, kGet, args[1], {
-    BufferToKey(args[0]->ToObject(), &data->data.get.key);
+    BufferToKey(args[0].As<Object>(), &data->data.get.key);
+  })
+
+  return Undefined();
+}
+
+
+Handle<Value> BPlus::GetPrevious(const Arguments &args) {
+  HandleScope scope;
+
+  UNWRAP
+  CHECK_OPENED(b)
+
+  if (!Buffer::HasInstance(args[0].As<Object>())) {
+    return ThrowException(String::New("First argument should be a ref to val"));
+  }
+
+  QUEUE_WORK(b, kGetPrevious, args[1], {
+    BufferToRawValue(args[0].As<Object>(), &data->data.previous.value);
+  })
+
+  return Undefined();
+}
+
+
+Handle<Value> BPlus::GetRange(const Arguments &args) {
+  HandleScope scope;
+
+  UNWRAP
+  CHECK_OPENED(b)
+
+  if (!Buffer::HasInstance(args[0].As<Object>()) ||
+      !Buffer::HasInstance(args[1].As<Object>())) {
+    return ThrowException(String::New("First two arguments should be Buffers"));
+  }
+
+  QUEUE_WORK(b, kGetRange, args[2], {
+    BufferToKey(args[0].As<Object>(), &data->data.range.start);
+    BufferToKey(args[1].As<Object>(), &data->data.range.end);
+    uv_async_init(uv_default_loop(),
+                  &data->data.range.notifier,
+                  BPlus::GetRangeNotifier);
+
+    data->data.range.queue = new BPQueue<BPGetRangeMessage>();
   })
 
   return Undefined();
@@ -285,12 +376,12 @@ Handle<Value> BPlus::Remove(const Arguments &args) {
   UNWRAP
   CHECK_OPENED(b)
 
-  if (!Buffer::HasInstance(args[0]->ToObject())) {
+  if (!Buffer::HasInstance(args[0].As<Object>())) {
     return ThrowException(String::New("First argument should be Buffer"));
   }
 
   QUEUE_WORK(b, kRemove, args[1], {
-    BufferToKey(args[0]->ToObject(), &data->data.remove.key);
+    BufferToKey(args[0].As<Object>(), &data->data.remove.key);
   })
 
   return Undefined();
@@ -304,49 +395,6 @@ Handle<Value> BPlus::Compact(const Arguments &args) {
   CHECK_OPENED(b)
 
   QUEUE_WORK(b, kCompact, args[0], {})
-
-  return Undefined();
-}
-
-
-Handle<Value> BPlus::GetPrevious(const Arguments &args) {
-  HandleScope scope;
-
-  UNWRAP
-  CHECK_OPENED(b)
-
-  if (!Buffer::HasInstance(args[0]->ToObject())) {
-    return ThrowException(String::New("First argument should be a ref to val"));
-  }
-
-  QUEUE_WORK(b, kGetPrevious, args[1], {
-    BufferToRawValue(args[0]->ToObject(), &data->data.previous.value);
-  })
-
-  return Undefined();
-}
-
-
-Handle<Value> BPlus::GetRange(const Arguments &args) {
-  HandleScope scope;
-
-  UNWRAP
-  CHECK_OPENED(b)
-
-  if (!Buffer::HasInstance(args[0]->ToObject()) ||
-      !Buffer::HasInstance(args[1]->ToObject())) {
-    return ThrowException(String::New("First two arguments should be Buffers"));
-  }
-
-  QUEUE_WORK(b, kGetRange, args[2], {
-    BufferToKey(args[0]->ToObject(), &data->data.range.start);
-    BufferToKey(args[1]->ToObject(), &data->data.range.end);
-    uv_async_init(uv_default_loop(),
-                  &data->data.range.notifier,
-                  BPlus::GetRangeNotifier);
-
-    data->data.range.queue = new BPQueue<BPGetRangeMessage>();
-  })
 
   return Undefined();
 }
