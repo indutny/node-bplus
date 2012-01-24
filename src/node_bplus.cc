@@ -16,6 +16,21 @@
       return ThrowException(String::New("Database wasn't opened"));\
     }
 
+#define QUEUE_WORK(b_, type_, callback_, prepare_)\
+      Local<Function> fn = callback_.As<Function>();\
+      Persistent<Function> callback = Persistent<Function>::New(fn);\
+      bp_work_req* data = new bp_work_req;\
+      data->b = b_;\
+      data->type = type_;\
+      data->callback = callback;\
+      data->w.data = (void*) data;\
+      b->Ref();\
+      prepare_\
+      uv_queue_work(uv_default_loop(),\
+                    &data->w,\
+                    BPlus::DoWork,\
+                    BPlus::AfterWork);
+
 namespace bplus {
 
 using namespace node;
@@ -85,23 +100,54 @@ Handle<Value> BPlus::Close(const Arguments &args) {
 }
 
 
-void BPlus::DoSet(uv_work_t* work) {
-  bp_base_req* req = container_of(work, bp_base_req, w);
-  uv_mutex_lock(&req->b->write_mutex_);
-
-  req->result = bp_set(&req->b->db_, &req->key, &req->value);
-
-  uv_mutex_unlock(&req->b->write_mutex_);
+void BPlus::DoWork(uv_work_t* work) {
+  bp_work_req* req = container_of(work, bp_work_req, w);
+  switch (req->type) {
+   case kSet:
+    uv_mutex_lock(&req->b->write_mutex_);
+    req->result = bp_set(&req->b->db_,
+                         &req->data.set.key,
+                         &req->data.set.value);
+    uv_mutex_unlock(&req->b->write_mutex_);
+    break;
+   case kGet:
+    req->result = bp_get(&req->b->db_,
+                         &req->data.get.key,
+                         &req->data.get.value);
+    break;
+   default:
+    break;
+  }
 }
 
 
-void BPlus::AfterSet(uv_work_t* work) {
+void BPlus::AfterWork(uv_work_t* work) {
   HandleScope scope;
 
-  bp_base_req* req = container_of(work, bp_base_req, w);
+  bp_work_req* req = container_of(work, bp_work_req, w);
 
-  Handle<Value> args[1] = { req->result == BP_OK ? False() : True() };
-  req->callback->Call(req->b->handle_, 1, args);
+  Handle<Value> args[2];
+
+  if (req->result == BP_OK) {
+    args[0] = Null();
+  } else {
+    args[0] = True();
+  }
+
+  switch (req->type) {
+   case kGet:
+    {
+      bp_value_t* v = &req->data.get.value;
+      args[1] = Buffer::New(v->value, v->length)->handle_;
+    }
+    break;
+   default:
+    args[1] = Undefined();
+    break;
+  }
+
+  req->callback->Call(req->b->handle_, 2, args);
+  req->callback.Dispose();
 
   req->b->Unref();
   free(work->data);
@@ -119,50 +165,12 @@ Handle<Value> BPlus::Set(const Arguments &args) {
     return ThrowException(String::New("First two arguments should be Buffers"));
   }
 
-  Local<Function> fn = args[2].As<Function>();
-  Persistent<Function> callback = Persistent<Function>::New(fn);
-
-  bp_base_req* data = new bp_base_req;
-  data->b = b;
-  data->callback = callback;
-  data->w.data = (void*) data;
-  b->Ref();
-
-  BufferToKey(args[0]->ToObject(), &data->key);
-  BufferToKey(args[1]->ToObject(), &data->value);
-
-  uv_queue_work(uv_default_loop(), &data->w, BPlus::DoSet, BPlus::AfterSet);
+  QUEUE_WORK(b, kSet, args[2], {
+    BufferToKey(args[0]->ToObject(), &data->data.set.key);
+    BufferToKey(args[1]->ToObject(), &data->data.set.value);
+  })
 
   return Undefined();
-}
-
-
-void BPlus::DoGet(uv_work_t* work) {
-  bp_base_req* req = container_of(work, bp_base_req, w);
-
-  req->result = bp_get(&req->b->db_, &req->key, &req->value);
-}
-
-
-void BPlus::AfterGet(uv_work_t* work) {
-  HandleScope scope;
-
-  bp_base_req* req = container_of(work, bp_base_req, w);
-
-  if (req->result == BP_OK) {
-    Handle<Value> args[2] = {
-        False(),
-        Buffer::New(req->value.value, req->value.length)->handle_
-    };
-    free(req->value.value);
-    req->callback->Call(req->b->handle_, 2, args);
-  } else {
-    Handle<Value> args[1] = { True() };
-    req->callback->Call(req->b->handle_, 1, args);
-  }
-
-  req->b->Unref();
-  free(work->data);
 }
 
 
@@ -176,18 +184,9 @@ Handle<Value> BPlus::Get(const Arguments &args) {
     return ThrowException(String::New("First argument should be Buffer"));
   }
 
-  Local<Function> fn = args[1].As<Function>();
-  Persistent<Function> callback = Persistent<Function>::New(fn);
-
-  bp_base_req* data = new bp_base_req;
-  data->b = b;
-  data->callback = callback;
-  data->w.data = (void*) data;
-  b->Ref();
-
-  BufferToKey(args[0]->ToObject(), &data->key);
-
-  uv_queue_work(uv_default_loop(), &data->w, BPlus::DoGet, BPlus::AfterGet);
+  QUEUE_WORK(b, kGet, args[1], {
+    BufferToKey(args[0]->ToObject(), &data->data.get.key);
+  })
 
   return Undefined();
 }

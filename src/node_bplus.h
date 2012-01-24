@@ -16,8 +16,6 @@ using namespace node;
 using namespace v8;
 
 #ifndef offset_of
-// g++ in strict mode complains loudly about the system offsetof() macro
-// because it uses NULL as the base address.
 #define offset_of(type, member) \
   ((intptr_t) ((char *) &(((type *) 8)->member) - 8))
 #endif
@@ -26,6 +24,7 @@ using namespace v8;
 #define container_of(ptr, type, member) \
   ((type *) ((char *) (ptr) - offset_of(type, member)))
 #endif
+
 
 void BufferToKey(Handle<Object> obj, bp_key_t* key) {
   key->length = Buffer::Length(obj);
@@ -36,12 +35,30 @@ void BufferToKey(Handle<Object> obj, bp_key_t* key) {
 
 class BPlus : ObjectWrap {
  public:
-  struct bp_base_req {
-    BPlus* b;
-    uv_work_t w;
+  enum bp_work_type {
+    kSet,
+    kGet
+  };
 
+  struct bp_set_data {
     bp_key_t key;
     bp_value_t value;
+  };
+
+  struct bp_get_data {
+    bp_key_t key;
+    bp_value_t value;
+  };
+
+  struct bp_work_req {
+    BPlus* b;
+    uv_work_t w;
+    enum bp_work_type type;
+
+    union {
+      struct bp_set_data set;
+      struct bp_set_data get;
+    } data;
 
     int result;
 
@@ -64,12 +81,10 @@ class BPlus : ObjectWrap {
   static Handle<Value> Open(const Arguments &args);
   static Handle<Value> Close(const Arguments &args);
 
-  static void DoSet(uv_work_t* work);
-  static void AfterSet(uv_work_t* work);
-  static Handle<Value> Set(const Arguments &args);
+  static void DoWork(uv_work_t* work);
+  static void AfterWork(uv_work_t* work);
 
-  static void DoGet(uv_work_t* work);
-  static void AfterGet(uv_work_t* work);
+  static Handle<Value> Set(const Arguments &args);
   static Handle<Value> Get(const Arguments &args);
 
   bool opened_;
