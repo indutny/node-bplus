@@ -5,6 +5,7 @@
 #include <node_object_wrap.h>
 #include <node_buffer.h>
 #include <v8.h>
+#include <stdlib.h>
 
 #include <bplus.h>
 
