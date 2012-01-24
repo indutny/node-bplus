@@ -50,6 +50,7 @@ void BPlus::Initialize(Handle<Object> target) {
   NODE_SET_PROTOTYPE_METHOD(t, "get", BPlus::Get);
   NODE_SET_PROTOTYPE_METHOD(t, "remove", BPlus::Remove);
   NODE_SET_PROTOTYPE_METHOD(t, "compact", BPlus::Compact);
+  NODE_SET_PROTOTYPE_METHOD(t, "getPrevious", BPlus::GetPrevious);
 
   target->Set(String::NewSymbol("BPlus"), t->GetFunction());
 }
@@ -120,6 +121,7 @@ void BPlus::DoWork(uv_work_t* work) {
                          &req->data.get.key,
                          &req->data.get.value);
     free(req->data.get.key.value);
+    req->data.get.key.value = NULL;
     break;
    case kRemove:
     uv_mutex_lock(&req->b->write_mutex_);
@@ -132,6 +134,12 @@ void BPlus::DoWork(uv_work_t* work) {
     uv_mutex_lock(&req->b->write_mutex_);
     req->result = bp_compact(&req->b->db_);
     uv_mutex_unlock(&req->b->write_mutex_);
+    break;
+   case kGetPrevious:
+    req->result = bp_get_previous(&req->b->db_,
+                                  &req->data.previous.value,
+                                  &req->data.previous.previous);
+    break;
    default:
     break;
   }
@@ -153,10 +161,10 @@ void BPlus::AfterWork(uv_work_t* work) {
 
     switch (req->type) {
      case kGet:
-      {
-        bp_value_t* v = &req->data.get.value;
-        args[1] = Buffer::New(v->value, v->length)->handle_;
-      }
+      args[1] = ValueToObject(&req->data.get.value);
+      break;
+     case kGetPrevious:
+      args[1] = ValueToObject(&req->data.previous.previous);
       break;
      default:
       args[1] = Undefined();
@@ -235,6 +243,20 @@ Handle<Value> BPlus::Compact(const Arguments &args) {
   CHECK_OPENED(b)
 
   QUEUE_WORK(b, kCompact, args[0], {})
+
+  return Undefined();
+}
+
+
+Handle<Value> BPlus::GetPrevious(const Arguments &args) {
+  HandleScope scope;
+
+  UNWRAP
+  CHECK_OPENED(b)
+
+  QUEUE_WORK(b, kGetPrevious, args[1], {
+    BufferToRawValue(args[0]->ToObject(), &data->data.previous.value);
+  })
 
   return Undefined();
 }

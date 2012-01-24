@@ -7,6 +7,7 @@
 #include <node_buffer.h>
 #include <v8.h>
 #include <string.h>
+#include <assert.h>
 
 #include <bplus.h>
 
@@ -32,6 +33,22 @@ void BufferToKey(Handle<Object> obj, bp_key_t* key) {
   memcpy(key->value, Buffer::Data(obj), key->length);
 }
 
+void BufferToRawValue(Handle<Object> obj, bp_value_t* value) {
+  assert(Buffer::Length(obj) == sizeof(*value));
+  memcpy((char*) value, Buffer::Data(obj), Buffer::Length(obj));
+}
+
+Handle<Object> ValueToObject(bp_value_t* v) {
+  Handle<Object> result = Object::New();
+
+  result->Set(String::NewSymbol("value"),
+              Buffer::New(v->value, v->length)->handle_);
+  result->Set(String::NewSymbol("ref"),
+              Buffer::New((char*) v, sizeof(*v))->handle_);
+
+  return result;
+}
+
 
 class BPlus : ObjectWrap {
  public:
@@ -39,7 +56,8 @@ class BPlus : ObjectWrap {
     kSet,
     kGet,
     kRemove,
-    kCompact
+    kCompact,
+    kGetPrevious
   };
 
   struct bp_work_req {
@@ -62,6 +80,11 @@ class BPlus : ObjectWrap {
       struct {
         bp_key_t key;
       } remove;
+
+      struct {
+        bp_value_t value;
+        bp_value_t previous;
+      } previous;
     } data;
 
     int result;
@@ -92,6 +115,7 @@ class BPlus : ObjectWrap {
   static Handle<Value> Get(const Arguments &args);
   static Handle<Value> Remove(const Arguments &args);
   static Handle<Value> Compact(const Arguments &args);
+  static Handle<Value> GetPrevious(const Arguments &args);
 
   bool opened_;
   bp_tree_t db_;

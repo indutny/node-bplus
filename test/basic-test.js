@@ -74,4 +74,22 @@ suite('BPlus addon', function() {
       });
     });
   });
+
+  test('should set, overwrite and get previous', function(done) {
+    db.set('k', 'v1', function(err) {
+      assert.ok(!err);
+      db.set('k', 'v2', function(err) {
+        assert.ok(!err);
+        db.get('k', function(err, value, ref) {
+          assert.ok(!err);
+          assert.equal(value.toString(), 'v2');
+          db.getPrevious(ref, function(err, value) {
+            assert.ok(!err);
+            assert.equal(value.toString(), 'v1');
+            done();
+          });
+        });
+      });
+    });
+  });
 });
