@@ -159,23 +159,19 @@ void BPlus::DoWork(uv_work_t* work) {
   bp_work_req* req = container_of(work, bp_work_req, w);
   switch (req->type) {
    case kSet:
-    uv_mutex_lock(&req->b->write_mutex_);
     req->result = bp_set(&req->b->db_,
                          &req->data.set.key,
                          &req->data.set.value);
-    uv_mutex_unlock(&req->b->write_mutex_);
 
     free(req->data.set.key.value);
     free(req->data.set.value.value);
     break;
    case kBulkSet:
-    uv_mutex_lock(&req->b->write_mutex_);
     req->result = bp_bulk_set(
         &req->b->db_,
         req->data.bulk.length,
         const_cast<const bp_key_t**>(&req->data.bulk.keys),
         const_cast<const bp_value_t**>(&req->data.bulk.values));
-    uv_mutex_unlock(&req->b->write_mutex_);
 
     for (uint64_t i = 0; i < req->data.bulk.length; i++) {
       free(req->data.bulk.keys[i].value);
@@ -207,16 +203,12 @@ void BPlus::DoWork(uv_work_t* work) {
     free(req->data.range.end.value);
     break;
    case kRemove:
-    uv_mutex_lock(&req->b->write_mutex_);
     req->result = bp_remove(&req->b->db_, &req->data.remove.key);
-    uv_mutex_unlock(&req->b->write_mutex_);
 
     free(req->data.remove.key.value);
     break;
    case kCompact:
-    uv_mutex_lock(&req->b->write_mutex_);
     req->result = bp_compact(&req->b->db_);
-    uv_mutex_unlock(&req->b->write_mutex_);
     break;
    default:
     break;
@@ -480,14 +472,12 @@ Handle<Value> BPlus::GetFilteredRange(const Arguments &args) {
 
   int ret;
 
-  uv_mutex_lock(&b->write_mutex_);
   ret = bp_get_filtered_range(&b->db_,
                               &req->data.filtered_range.start,
                               &req->data.filtered_range.end,
                               BPlus::GetRangeFilter,
                               BPlus::GetFilteredRangeCallback,
                               reinterpret_cast<void*>(req));
-  uv_mutex_unlock(&b->write_mutex_);
 
   Handle<Value> argv[2];
   if (ret != BP_OK) {
