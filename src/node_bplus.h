@@ -3,13 +3,45 @@
 
 #include <uv.h>
 #include <node.h>
+#include <node_version.h>
 #include <node_object_wrap.h>
 #include <node_buffer.h>
 #include <v8.h>
-#include <string.h>
+#include <string.h> /* memcpy */
+#include <stdlib.h> /* abort */
 #include <assert.h>
 
 #include <bplus.h>
+
+/* polyfill uv mutexes for node 0.6.x */
+#if !NODE_VERSION_AT_LEAST(0, 7, 0)
+#include <pthread.h>
+
+typedef pthread_mutex_t uv_mutex_t;
+
+
+int uv_mutex_init(uv_mutex_t* mutex) {
+  if (pthread_mutex_init(mutex, NULL))
+    return -1;
+  else
+    return 0;
+}
+
+
+void uv_mutex_destroy(uv_mutex_t* mutex) {
+  if (!pthread_mutex_destroy(mutex)) abort();
+}
+
+
+void uv_mutex_lock(uv_mutex_t* mutex) {
+  if (!pthread_mutex_lock(mutex)) abort();
+}
+
+
+void uv_mutex_unlock(uv_mutex_t* mutex) {
+  if (!pthread_mutex_unlock(mutex)) abort();
+}
+#endif
 
 namespace bplus {
 
