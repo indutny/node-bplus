@@ -15,7 +15,22 @@
 
 /* polyfill uv mutexes for node 0.6.x */
 #if !NODE_VERSION_AT_LEAST(0, 7, 0)
+
 #include <pthread.h>
+
+#ifdef NDEBUG
+# define CHECK(r) ((void) (r))
+#else
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#define CHECK(r)                                  \
+    do {                                          \
+      int __r = (r);                              \
+      if (__r) errno = __r, perror(#r), abort();  \
+    }                                             \
+    while (0)
+#endif
 
 typedef pthread_mutex_t uv_mutex_t;
 
@@ -29,17 +44,17 @@ int uv_mutex_init(uv_mutex_t* mutex) {
 
 
 void uv_mutex_destroy(uv_mutex_t* mutex) {
-  if (!pthread_mutex_destroy(mutex)) abort();
+  CHECK(pthread_mutex_destroy(mutex));
 }
 
 
 void uv_mutex_lock(uv_mutex_t* mutex) {
-  if (!pthread_mutex_lock(mutex)) abort();
+  CHECK(pthread_mutex_lock(mutex));
 }
 
 
 void uv_mutex_unlock(uv_mutex_t* mutex) {
-  if (!pthread_mutex_unlock(mutex)) abort();
+  CHECK(pthread_mutex_unlock(mutex));
 }
 #endif
 

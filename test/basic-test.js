@@ -9,8 +9,7 @@ suite('BPlus addon', function() {
       fs.unlinkSync('/tmp/test.bp');
     } catch (e) {
     }
-    db = bplus.create();
-    db.open('/tmp/test.bp');
+    db = bplus.create().open('/tmp/test.bp');
   });
 
   teardown(function() {
