@@ -264,7 +264,7 @@ class BPlus : ObjectWrap {
   static Handle<Value> Compact(const Arguments &args);
 
   bool opened_;
-  bp_tree_t db_;
+  bp_db_t db_;
 };
 
 } // namespace plus
