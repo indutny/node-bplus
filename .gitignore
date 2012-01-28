@@ -3,3 +3,4 @@ node_modules/
 .lock-wscript
 /build
 *.node
+*.bp
