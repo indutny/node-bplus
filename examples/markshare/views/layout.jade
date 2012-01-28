@@ -1,0 +1,28 @@
+!!! 5
+html
+  head
+    link(rel='stylesheet', href='/css/bootstrap.min.css')
+    link(rel='stylesheet', href='/css/main.css')
+    - if (title)
+      title= 'Markshare - ' + title
+    - else
+      title= 'Markshare'
+  body
+    header(class='container')
+      - if (title)
+        h1= title
+      - else
+        h1= '## Markshare'
+
+    section(id='content', class='container')!= body
+
+    footer(class='footer')
+      = 'Made using '
+      a(href='http://nodejs.org/') node.js
+      = ', '
+      a(href='https://github.com/indutny/node-bplus') node-bplus
+      = ' and '
+      a(href='http://twitter.github.com/bootstrap/') twitter bootstrap
+
+    script(src='/js/jquery.min.js')
+    script(src='/js/main.js')

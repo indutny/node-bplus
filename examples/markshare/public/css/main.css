@@ -1,0 +1,31 @@
+@font-face {
+  font-family: 'LaunicaRegular';
+  src: url('/fonts/launica-webfont.eot');
+  src: url('/fonts/launica-webfont.eot?#iefix') format('embedded-opentype'),
+       url('/fonts/launica-webfont.woff') format('woff'),
+       url('/fonts/launica-webfont.ttf') format('truetype'),
+       url('/fonts/launica-webfont.svg#LaunicaRegular') format('svg');
+  font-weight: normal;
+  font-style: normal;
+}
+
+header > h1 {
+  font-family: 'LaunicaRegular';
+  font-size: 68px;
+  line-height: 74px;
+}
+
+form#doc-form {
+  width: 500px;
+}
+
+footer {
+  width: 100%;
+  height: 40px;
+  margin-top: 0;
+  padding: 16px 16px 0 16px;
+  line-height: 24px;
+  position: fixed;
+  bottom: 0;
+  background: white;
+}
