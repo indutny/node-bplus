@@ -33,7 +33,7 @@
   }
 
   form.submit(function() {
-    var url = fields.url.val();
+    var url = fields.url.val().replace(/^\/+/, '');
 
     fieldsSwitch(true);
 

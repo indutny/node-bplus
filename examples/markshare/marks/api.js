@@ -38,7 +38,7 @@ Marks.prototype.set = function set(req, res) {
     body: req.body.body
   };
 
-  this.db.update(req.url, JSON.stringify(mark), function filter(prev) {
+  this.db.update(mark.url, JSON.stringify(mark), function filter(prev) {
     // Allow updates only if password matches to previous
     prev = JSON.parse(prev.toString());
     return prev.password === mark.password;
