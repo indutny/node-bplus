@@ -13,6 +13,7 @@
     "mocha": "0.10.x"
   },
   "scripts": {
-    "test": "mocha --ui tdd --growl --reporter spec test/*-test.js"
+    "test": "mocha --ui tdd --growl --reporter spec test/*-test.js",
+    "install": "node-waf configure && node-waf build"
   }
 }
