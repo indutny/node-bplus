@@ -204,21 +204,10 @@ class BPlus : ObjectWrap {
       } set;
 
       struct {
-        bp_key_t key;
-        bp_value_t value;
-      } update;
-
-      struct {
         bp_key_t* keys;
         bp_value_t* values;
         uint64_t length;
       } bulk;
-
-      struct {
-        bp_key_t* keys;
-        bp_value_t* values;
-        uint64_t length;
-      } bulk_update;
 
       struct {
         bp_key_t key;
@@ -247,10 +236,6 @@ class BPlus : ObjectWrap {
       struct {
         bp_key_t key;
       } remove;
-
-      struct {
-        bp_key_t key;
-      } remove_v;
     } data;
 
     int result;

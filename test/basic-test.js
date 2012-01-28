@@ -45,7 +45,7 @@ suite('BPlus addon', function() {
         return prev.toString() === 'value';
       }
       db.update('key', 'updated-value', filter, function(err) {
-        assert(!err);
+        assert.ok(!err);
         db.get('key', function(err, value) {
           assert.ok(!err);
           assert.equal(value.toString(), 'updated-value');
@@ -62,7 +62,7 @@ suite('BPlus addon', function() {
         return false;
       }
       db.update('key', 'updated-value', filter, function(err) {
-        assert(err);
+        assert.ok(err);
         db.get('key', function(err, value) {
           assert.ok(!err);
           assert.equal(value.toString(), 'value');
@@ -186,7 +186,27 @@ suite('BPlus addon', function() {
       db.get('2', function(err, value) {
         assert.ok(!err);
         assert.equal(value.toString(), '2');
-        done();
+        function filter(prev, curr) {
+          return prev.toString() === '2';
+        }
+        var kvs = [
+          { key: '1', value: '1!!' },
+          { key: '2', value: '2!!' },
+          { key: '3', value: '3!!' },
+          { key: '4', value: '4!!' }
+        ];
+        db.bulkUpdate(kvs, filter, function(err) {
+          assert.ok(!err);
+          db.get('2', function(err, value) {
+            assert.ok(!err);
+            assert.equal(value.toString(), '2!!');
+            db.get('1', function(err, value) {
+              assert.ok(!err);
+              assert.equal(value.toString(), '1');
+              done();
+            });
+          });
+        });
       });
     });
   });

@@ -17,20 +17,23 @@
       return ThrowException(String::New("Database wasn't opened"));\
     }
 
+#define INIT_REQ(b_, type_, callback_)\
+    Local<Function> fn = callback_.As<Function>();\
+    Persistent<Function> callback = Persistent<Function>::New(fn);\
+    bp_work_req* req = new bp_work_req;\
+    req->b = b_;\
+    req->type = type_;\
+    req->callback = callback;\
+    req->w.data = reinterpret_cast<void*>(req);\
+
 #define QUEUE_WORK(b_, type_, callback_, prepare_)\
-      Local<Function> fn = callback_.As<Function>();\
-      Persistent<Function> callback = Persistent<Function>::New(fn);\
-      bp_work_req* data = new bp_work_req;\
-      data->b = b_;\
-      data->type = type_;\
-      data->callback = callback;\
-      data->w.data = reinterpret_cast<void*>(data);\
-      b->Ref();\
-      prepare_\
-      uv_queue_work(uv_default_loop(),\
-                    &data->w,\
-                    BPlus::DoWork,\
-                    BPlus::AfterWork);
+    INIT_REQ(b_, type_, callback_)\
+    b->Ref();\
+    prepare_\
+    uv_queue_work(uv_default_loop(),\
+                  &req->w,\
+                  BPlus::DoWork,\
+                  BPlus::AfterWork);
 
 namespace bplus {
 
@@ -67,6 +70,32 @@ Handle<Value> ValueToObject(bp_value_t* v) {
 }
 
 
+void CopyBulkData(BPlus::bp_work_req* req, uint32_t len, Handle<Array> bulk) {
+  req->data.bulk.length = len;
+  req->data.bulk.keys = new bp_key_t[len];
+  req->data.bulk.values = new bp_key_t[len];
+
+  for (uint32_t i = 0; i < len; i++) {
+    Local<Object> item = bulk->Get(i).As<Object>();
+    BufferToKey(item->Get(String::NewSymbol("key")).As<Object>(),
+                &req->data.bulk.keys[i]);
+    BufferToKey(item->Get(String::NewSymbol("value")).As<Object>(),
+                &req->data.bulk.values[i]);
+  }
+}
+
+
+void DestroyBulkData(BPlus::bp_work_req* req) {
+  for (uint64_t i = 0; i < req->data.bulk.length; i++) {
+    free(req->data.bulk.keys[i].value);
+    free(req->data.bulk.values[i].value);
+  }
+
+  free(req->data.bulk.keys);
+  free(req->data.bulk.values);
+}
+
+
 Handle<Value> InvokeCallback(Handle<Object> obj,
                              Handle<Function> cb,
                              int c,
@@ -98,6 +127,7 @@ void BPlus::Initialize(Handle<Object> target) {
   NODE_SET_PROTOTYPE_METHOD(t, "set", BPlus::Set);
   NODE_SET_PROTOTYPE_METHOD(t, "bulkSet", BPlus::BulkSet);
   NODE_SET_PROTOTYPE_METHOD(t, "update", BPlus::Update);
+  NODE_SET_PROTOTYPE_METHOD(t, "bulkUpdate", BPlus::BulkUpdate);
   NODE_SET_PROTOTYPE_METHOD(t, "get", BPlus::Get);
   NODE_SET_PROTOTYPE_METHOD(t, "remove", BPlus::Remove);
   NODE_SET_PROTOTYPE_METHOD(t, "compact", BPlus::Compact);
@@ -174,13 +204,7 @@ void BPlus::DoWork(uv_work_t* work) {
         const_cast<const bp_key_t**>(&req->data.bulk.keys),
         const_cast<const bp_value_t**>(&req->data.bulk.values));
 
-    for (uint64_t i = 0; i < req->data.bulk.length; i++) {
-      free(req->data.bulk.keys[i].value);
-      free(req->data.bulk.values[i].value);
-    }
-
-    free(req->data.bulk.keys);
-    free(req->data.bulk.values);
+    DestroyBulkData(req);
     break;
    case kGet:
     req->result = bp_get(&req->b->db_,
@@ -362,8 +386,8 @@ Handle<Value> BPlus::Set(const Arguments &args) {
   }
 
   QUEUE_WORK(b, kSet, args[2], {
-    BufferToKey(args[0].As<Object>(), &data->data.set.key);
-    BufferToKey(args[1].As<Object>(), &data->data.set.value);
+    BufferToKey(args[0].As<Object>(), &req->data.set.key);
+    BufferToKey(args[1].As<Object>(), &req->data.set.value);
   })
 
   return Undefined();
@@ -382,27 +406,24 @@ Handle<Value> BPlus::Update(const Arguments &args) {
   }
 
   /* initialize req manually */
-  bp_work_req* req = new bp_work_req;
-  req->b = b;
-  req->type = kUpdate;
-  req->callback = Persistent<Function>::New(args[2].As<Function>());
+  INIT_REQ(b, kUpdate, args[2])
 
-  BufferToKey(args[0].As<Object>(), &req->data.update.key);
-  BufferToKey(args[1].As<Object>(), &req->data.update.value);
+  BufferToKey(args[0].As<Object>(), &req->data.set.key);
+  BufferToKey(args[1].As<Object>(), &req->data.set.value);
 
   int ret;
 
   ret = bp_update(&b->db_,
-                  &req->data.update.key,
-                  &req->data.update.value,
+                  &req->data.set.key,
+                  &req->data.set.value,
                   BPlus::UpdateCallback,
                   reinterpret_cast<void*>(req));
 
   req->callback.Dispose();
   req->callback.Clear();
 
-  delete req->data.update.key.value;
-  delete req->data.update.value.value;
+  delete req->data.set.key.value;
+  delete req->data.set.value.value;
   delete req;
 
   if (ret == BP_OK) {
@@ -424,23 +445,49 @@ Handle<Value> BPlus::BulkSet(const Arguments &args) {
   }
 
   Local<Array> bulk = args[0].As<Array>();
-  uint32_t len = bulk->Length();
 
   QUEUE_WORK(b, kBulkSet, args[1], {
-    data->data.bulk.length = len;
-    data->data.bulk.keys = new bp_key_t[len];
-    data->data.bulk.values = new bp_key_t[len];
-
-    for (uint32_t i = 0; i < len; i++) {
-      Local<Object> item = bulk->Get(i).As<Object>();
-      BufferToKey(item->Get(String::NewSymbol("key")).As<Object>(),
-                  &data->data.bulk.keys[i]);
-      BufferToKey(item->Get(String::NewSymbol("value")).As<Object>(),
-                  &data->data.bulk.values[i]);
-    }
+    CopyBulkData(req, bulk->Length(), bulk);
   });
 
   return Undefined();
+}
+
+
+Handle<Value> BPlus::BulkUpdate(const Arguments &args) {
+  HandleScope scope;
+
+  UNWRAP
+  CHECK_OPENED(b)
+
+  if (!args[0]->IsArray()) {
+    return ThrowException(String::New("First argument should be an Array"));
+  }
+
+  INIT_REQ(b, kBulkUpdate, args[1])
+  Local<Array> bulk = args[0].As<Array>();
+
+  CopyBulkData(req, bulk->Length(), bulk);
+
+  int ret;
+
+  ret = bp_bulk_update(&req->b->db_,
+                       req->data.bulk.length,
+                       const_cast<const bp_key_t**>(&req->data.bulk.keys),
+                       const_cast<const bp_value_t**>(&req->data.bulk.values),
+                       BPlus::UpdateCallback,
+                       reinterpret_cast<void*>(req));
+
+  DestroyBulkData(req);
+  req->callback.Dispose();
+  req->callback.Clear();
+  delete req;
+
+  if (ret == BP_OK) {
+    return True();
+  } else {
+    return scope.Close(Number::New(ret));
+  }
 }
 
 
@@ -455,7 +502,7 @@ Handle<Value> BPlus::Get(const Arguments &args) {
   }
 
   QUEUE_WORK(b, kGet, args[1], {
-    BufferToKey(args[0].As<Object>(), &data->data.get.key);
+    BufferToKey(args[0].As<Object>(), &req->data.get.key);
   })
 
   return Undefined();
@@ -473,7 +520,7 @@ Handle<Value> BPlus::GetPrevious(const Arguments &args) {
   }
 
   QUEUE_WORK(b, kGetPrevious, args[1], {
-    BufferToRawValue(args[0].As<Object>(), &data->data.previous.value);
+    BufferToRawValue(args[0].As<Object>(), &req->data.previous.value);
   })
 
   return Undefined();
@@ -492,13 +539,13 @@ Handle<Value> BPlus::GetRange(const Arguments &args) {
   }
 
   QUEUE_WORK(b, kGetRange, args[2], {
-    BufferToKey(args[0].As<Object>(), &data->data.range.start);
-    BufferToKey(args[1].As<Object>(), &data->data.range.end);
+    BufferToKey(args[0].As<Object>(), &req->data.range.start);
+    BufferToKey(args[1].As<Object>(), &req->data.range.end);
     uv_async_init(uv_default_loop(),
-                  &data->data.range.notifier,
+                  &req->data.range.notifier,
                   BPlus::GetRangeNotifier);
 
-    data->data.range.queue = new BPQueue<BPGetRangeMessage>();
+    req->data.range.queue = new BPQueue<BPGetRangeMessage>();
   })
 
   return Undefined();
@@ -517,11 +564,8 @@ Handle<Value> BPlus::GetFilteredRange(const Arguments &args) {
   }
 
   /* initialize req manually */
-  bp_work_req* req = new bp_work_req;
-  req->b = b;
-  req->type = kGetFilteredRange;
+  INIT_REQ(b, kGetFilteredRange, args[3])
   req->filter = Persistent<Function>::New(args[2].As<Function>());
-  req->callback = Persistent<Function>::New(args[3].As<Function>());
 
   BufferToKey(args[0].As<Object>(), &req->data.filtered_range.start);
   BufferToKey(args[1].As<Object>(), &req->data.filtered_range.end);
@@ -568,7 +612,7 @@ Handle<Value> BPlus::Remove(const Arguments &args) {
   }
 
   QUEUE_WORK(b, kRemove, args[1], {
-    BufferToKey(args[0].As<Object>(), &data->data.remove.key);
+    BufferToKey(args[0].As<Object>(), &req->data.remove.key);
   })
 
   return Undefined();
