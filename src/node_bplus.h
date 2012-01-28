@@ -180,11 +180,14 @@ class BPlus : ObjectWrap {
   enum bp_work_type {
     kSet,
     kBulkSet,
+    kUpdate,
+    kBulkUpdate,
     kGet,
     kGetRange,
     kGetFilteredRange,
     kGetPrevious,
     kRemove,
+    kRemoveV,
     kCompact
   };
 
@@ -201,10 +204,21 @@ class BPlus : ObjectWrap {
       } set;
 
       struct {
+        bp_key_t key;
+        bp_value_t value;
+      } update;
+
+      struct {
         bp_key_t* keys;
         bp_value_t* values;
         uint64_t length;
       } bulk;
+
+      struct {
+        bp_key_t* keys;
+        bp_value_t* values;
+        uint64_t length;
+      } bulk_update;
 
       struct {
         bp_key_t key;
@@ -233,6 +247,10 @@ class BPlus : ObjectWrap {
       struct {
         bp_key_t key;
       } remove;
+
+      struct {
+        bp_key_t key;
+      } remove_v;
     } data;
 
     int result;
@@ -258,6 +276,9 @@ class BPlus : ObjectWrap {
   static void DoWork(uv_work_t* work);
   static void AfterWork(uv_work_t* work);
 
+  static int UpdateCallback(void* arg,
+                            const bp_value_t* previous,
+                            const bp_value_t* current);
   static void GetRangeCallback(void* arg,
                                const bp_key_t* key,
                                const bp_value_t* value);
@@ -271,11 +292,14 @@ class BPlus : ObjectWrap {
 
   static Handle<Value> Set(const Arguments &args);
   static Handle<Value> BulkSet(const Arguments &args);
+  static Handle<Value> Update(const Arguments &args);
+  static Handle<Value> BulkUpdate(const Arguments &args);
   static Handle<Value> Get(const Arguments &args);
   static Handle<Value> GetPrevious(const Arguments &args);
   static Handle<Value> GetRange(const Arguments &args);
   static Handle<Value> GetFilteredRange(const Arguments &args);
   static Handle<Value> Remove(const Arguments &args);
+  static Handle<Value> RemoveV(const Arguments &args);
   static Handle<Value> Compact(const Arguments &args);
 
   bool opened_;

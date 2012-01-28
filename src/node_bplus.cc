@@ -97,6 +97,7 @@ void BPlus::Initialize(Handle<Object> target) {
 
   NODE_SET_PROTOTYPE_METHOD(t, "set", BPlus::Set);
   NODE_SET_PROTOTYPE_METHOD(t, "bulkSet", BPlus::BulkSet);
+  NODE_SET_PROTOTYPE_METHOD(t, "update", BPlus::Update);
   NODE_SET_PROTOTYPE_METHOD(t, "get", BPlus::Get);
   NODE_SET_PROTOTYPE_METHOD(t, "remove", BPlus::Remove);
   NODE_SET_PROTOTYPE_METHOD(t, "compact", BPlus::Compact);
@@ -262,6 +263,18 @@ void BPlus::AfterWork(uv_work_t* work) {
 }
 
 
+int BPlus::UpdateCallback(void* arg,
+                          const bp_value_t* previous,
+                          const bp_value_t* current) {
+  bp_work_req* req = reinterpret_cast<bp_work_req*>(arg);
+  Handle<Value> argv[2] = {
+      ValueToObject(const_cast<bp_value_t*>(previous)),
+      ValueToObject(const_cast<bp_value_t*>(current))
+  };
+  return !InvokeCallback(req->b->handle_, req->callback, 2, argv)->IsFalse();
+}
+
+
 void BPlus::GetRangeCallback(void* arg,
                              const bp_key_t* key,
                              const bp_value_t* value) {
@@ -354,6 +367,49 @@ Handle<Value> BPlus::Set(const Arguments &args) {
   })
 
   return Undefined();
+}
+
+
+Handle<Value> BPlus::Update(const Arguments &args) {
+  HandleScope scope;
+
+  UNWRAP
+  CHECK_OPENED(b)
+
+  if (!Buffer::HasInstance(args[0].As<Object>()) ||
+      !Buffer::HasInstance(args[1].As<Object>())) {
+    return ThrowException(String::New("First two arguments should be Buffers"));
+  }
+
+  /* initialize req manually */
+  bp_work_req* req = new bp_work_req;
+  req->b = b;
+  req->type = kUpdate;
+  req->callback = Persistent<Function>::New(args[2].As<Function>());
+
+  BufferToKey(args[0].As<Object>(), &req->data.update.key);
+  BufferToKey(args[1].As<Object>(), &req->data.update.value);
+
+  int ret;
+
+  ret = bp_update(&b->db_,
+                  &req->data.update.key,
+                  &req->data.update.value,
+                  BPlus::UpdateCallback,
+                  reinterpret_cast<void*>(req));
+
+  req->callback.Dispose();
+  req->callback.Clear();
+
+  delete req->data.update.key.value;
+  delete req->data.update.value.value;
+  delete req;
+
+  if (ret == BP_OK) {
+    return True();
+  } else {
+    return scope.Close(Number::New(ret));
+  }
 }
 
 

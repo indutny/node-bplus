@@ -38,6 +38,40 @@ suite('BPlus addon', function() {
     });
   });
 
+  test('should set, update and get key/value', function(done) {
+    db.set('key', 'value', function(err) {
+      assert.ok(!err);
+      function filter(prev, curr) {
+        return prev.toString() === 'value';
+      }
+      db.update('key', 'updated-value', filter, function(err) {
+        assert(!err);
+        db.get('key', function(err, value) {
+          assert.ok(!err);
+          assert.equal(value.toString(), 'updated-value');
+          done();
+        });
+      });
+    });
+  });
+
+  test('should set, fail update and get key/value', function(done) {
+    db.set('key', 'value', function(err) {
+      assert.ok(!err);
+      function filter(prev, curr) {
+        return false;
+      }
+      db.update('key', 'updated-value', filter, function(err) {
+        assert(err);
+        db.get('key', function(err, value) {
+          assert.ok(!err);
+          assert.equal(value.toString(), 'value');
+          done();
+        });
+      });
+    });
+  });
+
   test('should set, remove and not found key after', function(done) {
     db.set('key', 'value', function(err) {
       assert.ok(!err);
