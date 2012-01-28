@@ -3,33 +3,45 @@ div(id='status', class='alert-message', style='display: none')
   p(class='alert-text')
 
 form(id='doc-form', onsubmit='return false')
-  div(class='clearfix')
+  - if (mark.url)
+    - var urlStyle = 'display: none';
+  - else
+    - var urlStyle = '';
+
+  div(class='clearfix', style=urlStyle)
     - var value = mark.url.replace(/\//g, '');
-    input(id='url',
-          class='xxlarge',
-          placeholder='url-of-doc',
-          value= value,
-          required)
+    label(for='url') Url:
+    div.input
+      input(id='url',
+            class='xxlarge',
+            value= value,
+            required)
   div(class='clearfix')
-    input(id='password',
-          type='password',
-          class='xxlarge',
-          placeholder='password')
-    - if (!mark.url)
-      span(class='help-block')
-        b Note: 
-        span you will need to type same password to edit your mark later
+    label(for='password') Password:
+    div.input
+      input(id='password',
+            type='password',
+            class='xxlarge',
+            placeholder='password')
+      - if (!mark.url)
+        span(class='help-block')
+          b Note: 
+          span you will need to type same password to edit your mark later
   div(class='clearfix')
-    input(id='title',
-          class='xxlarge',
-          placeholder='Title of doc',
-          value=mark.title,
-          required)
+    label(for='title') Title:
+    div.input
+      input(id='title',
+            class='xxlarge',
+            placeholder='Title of doc',
+            value=mark.title,
+            required)
   div(class='clearfix')
-    textarea(id='body', class='xxlarge', rows=15, required)
-      - if (mark.body)
-        = mark.body
-      - else
-        ='Put your *markdown* text here!'
-  div(class='clearfix')
+    label(for='body') Body:
+    div.input
+      textarea(id='body', class='xxlarge', rows=15, required)
+        - if (mark.body)
+          = mark.body
+        - else
+          ='Put your *markdown* text here!'
+  div(class='actions')
     input(type='submit', class='btn large primary', value='Save')
