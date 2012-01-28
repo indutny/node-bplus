@@ -87,6 +87,41 @@ suite('BPlus addon', function() {
     });
   });
 
+  test('should set, removev and not found key after', function(done) {
+    db.set('key', 'value', function(err) {
+      assert.ok(!err);
+      function filter(value) {
+        return value.toString() === 'value';
+      }
+      db.removev('key', filter, function(err) {
+        assert.ok(!err);
+        db.get('key', function(err, value) {
+          assert.ok(err);
+          assert.ok(typeof value === 'number');
+          assert.ok(value > 0);
+          done();
+        });
+      });
+    });
+  });
+
+  test('should set, fail removev and not found key after', function(done) {
+    db.set('key', 'value', function(err) {
+      assert.ok(!err);
+      function filter(value) {
+        return value.toString() !== 'value';
+      }
+      db.removev('key', filter, function(err) {
+        assert.ok(err);
+        db.get('key', function(err, value) {
+          assert.ok(!err);
+          assert.equal(value.toString(), 'value');
+          done();
+        });
+      });
+    });
+  });
+
   test('should set, compact, set and get both values', function(done) {
     db.set('key1', 'value1', function(err) {
       assert.ok(!err);

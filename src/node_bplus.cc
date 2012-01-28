@@ -130,6 +130,7 @@ void BPlus::Initialize(Handle<Object> target) {
   NODE_SET_PROTOTYPE_METHOD(t, "bulkUpdate", BPlus::BulkUpdate);
   NODE_SET_PROTOTYPE_METHOD(t, "get", BPlus::Get);
   NODE_SET_PROTOTYPE_METHOD(t, "remove", BPlus::Remove);
+  NODE_SET_PROTOTYPE_METHOD(t, "removev", BPlus::RemoveV);
   NODE_SET_PROTOTYPE_METHOD(t, "compact", BPlus::Compact);
   NODE_SET_PROTOTYPE_METHOD(t, "getPrevious", BPlus::GetPrevious);
   NODE_SET_PROTOTYPE_METHOD(t, "getRange", BPlus::GetRange);
@@ -296,6 +297,14 @@ int BPlus::UpdateCallback(void* arg,
       ValueToObject(const_cast<bp_value_t*>(current))
   };
   return !InvokeCallback(req->b->handle_, req->callback, 2, argv)->IsFalse();
+}
+
+
+int BPlus::RemoveCallback(void* arg,
+                          const bp_value_t* value) {
+  bp_work_req* req = reinterpret_cast<bp_work_req*>(arg);
+  Handle<Value> argv[1] = { ValueToObject(const_cast<bp_value_t*>(value)) };
+  return !InvokeCallback(req->b->handle_, req->callback, 1, argv)->IsFalse();
 }
 
 
@@ -616,6 +625,40 @@ Handle<Value> BPlus::Remove(const Arguments &args) {
   })
 
   return Undefined();
+}
+
+
+Handle<Value> BPlus::RemoveV(const Arguments &args) {
+  HandleScope scope;
+
+  UNWRAP
+  CHECK_OPENED(b)
+
+  if (!Buffer::HasInstance(args[0].As<Object>())) {
+    return ThrowException(String::New("First argument should be Buffer"));
+  }
+
+  INIT_REQ(b, kRemoveV, args[1])
+  BufferToKey(args[0].As<Object>(), &req->data.remove.key);
+
+  int ret;
+
+  ret = bp_removev(&b->db_,
+                   &req->data.remove.key,
+                   BPlus::RemoveCallback,
+                   reinterpret_cast<void*>(req));
+
+  req->callback.Dispose();
+  req->callback.Clear();
+
+  delete req->data.remove.key.value;
+  delete req;
+
+  if (ret == BP_OK) {
+    return True();
+  } else {
+    return scope.Close(Number::New(ret));
+  }
 }
 
 

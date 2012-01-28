@@ -264,6 +264,8 @@ class BPlus : ObjectWrap {
   static int UpdateCallback(void* arg,
                             const bp_value_t* previous,
                             const bp_value_t* current);
+  static int RemoveCallback(void* arg,
+                            const bp_value_t* value);
   static void GetRangeCallback(void* arg,
                                const bp_key_t* key,
                                const bp_value_t* value);
