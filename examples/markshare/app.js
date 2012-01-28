@@ -14,6 +14,11 @@ var app = module.exports = express.createServer();
 
 app.db = bplus.create().open(__dirname + '/' + app.settings.env + '.bp');
 
+// Compact each 15 minutes
+setInterval(function() {
+  app.db.compact();
+}, 15 * 60000);
+
 app.configure(function(){
   app.set('views', __dirname + '/views');
   app.set('view engine', 'jade');
