@@ -25,3 +25,7 @@ footer {
   bottom: 0;
   background: white;
 }
+
+body {
+  padding-bottom: 40px;
+}

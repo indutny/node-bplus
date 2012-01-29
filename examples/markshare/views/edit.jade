@@ -20,29 +20,32 @@ form(id='doc-form', onsubmit='return false')
   div(class='clearfix')
     label(for='password') Password:
     div.input
-      input(id='password',
-            type='password',
-            class='xxlarge',
-            placeholder='password')
-      - if (!mark.url)
-        span(class='help-block')
-          b Note: 
-          span you will need to type same password to edit your mark later
+      - if (mark.url)
+        input(id='password',
+              type='password',
+              class='xxlarge',
+              placeholder='Enter password that was used at mark creation')
+      - else
+        input(id='password',
+              type='password',
+              class='xxlarge',
+              placeholder='Note: you will need to type same password to edit your mark later')
   div(class='clearfix')
     label(for='title') Title:
     div.input
       input(id='title',
             class='xxlarge',
-            placeholder='Title of doc',
+            placeholder='Title of mark',
             value=mark.title,
             required)
   div(class='clearfix')
     label(for='body') Body:
     div.input
-      textarea(id='body', class='xxlarge', rows=15, required)
-        - if (mark.body)
-          = mark.body
-        - else
-          ='Put your *markdown* text here!'
+      textarea(id='body',
+               class='xxlarge',
+               rows=12,
+               placeholder='Put your *markdown* text here!',
+               required)
+        = mark.body
   div(class='actions')
     input(type='submit', class='btn large primary', value='Save')
