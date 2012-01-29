@@ -1,5 +1,4 @@
-# Node.js bindings for a bplus C libarary
-
+# Node.js bindings for a [bplus](https://github.com/indutny/bplus) C libarary [![Build Status](https://secure.travis-ci.org/indutny/node-bplus.png)](http://travis-ci.org/indutny/node-bplus)
 #### LICENSE
 
 This software is licensed under the MIT License.
