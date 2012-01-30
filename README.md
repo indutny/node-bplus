@@ -4,6 +4,10 @@
 
 Both database engine and node.js bindings are in development now, use carefully.
 
+I setup a demo site to test it and show how fast it is:
+
+http://markshare.indutny.com/
+
 ## Installation
 
 ```bash
