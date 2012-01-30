@@ -1,5 +1,9 @@
 # Node.js bindings for a [bplus](https://github.com/indutny/bplus) C libarary [![Build Status](https://secure.travis-ci.org/indutny/node-bplus.png)](http://travis-ci.org/indutny/node-bplus)
 
+# ** Danger zone! Possible unicorns and rainbows! **
+
+Both database engine and node.js bindings are in development now, use carefully.
+
 ## Installation
 
 ```bash
