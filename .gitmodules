@@ -1,3 +1,0 @@
-[submodule "deps/bplus"]
-	path = deps/bplus
-	url = git://github.com/indutny/bplus.git
